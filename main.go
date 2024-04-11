@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
@@ -170,13 +171,52 @@ type dnsResourceRecord struct {
 }
 
 func (msg *dnsMsg) unpack(data []byte) error {
-	// Implement DNS message unpacking
+	// Ensure data is at least 12 bytes long (DNS header)
+	if len(data) < 12 {
+		return fmt.Errorf("invalid DNS message: message too short")
+	}
+
+	// Unpack DNS header
+	msg.ID = binary.BigEndian.Uint16(data[:2])
+	msg.Flags = binary.BigEndian.Uint16(data[2:4])
+
+	// Unpack DNS question section
+	qStart := 12
+	for qStart < len(data) && data[qStart] != 0 {
+		qStart++
+	}
+	if qStart+4 > len(data) {
+		return fmt.Errorf("invalid DNS message: malformed question section")
+	}
+	msg.Question.Name = string(data[12:qStart])
+	msg.Question.Type = binary.BigEndian.Uint16(data[qStart+1 : qStart+3])
+	msg.Question.Class = binary.BigEndian.Uint16(data[qStart+3 : qStart+5])
+
+	// Other sections are not supported in this example
+
 	return nil
 }
 
 func (msg *dnsMsg) pack() ([]byte, error) {
-	// Implement DNS message packing
-	return nil, nil
+	// Pack DNS header
+	header := make([]byte, 12)
+	binary.BigEndian.PutUint16(header[:2], msg.ID)
+	binary.BigEndian.PutUint16(header[2:4], msg.Flags)
+
+	// Pack DNS question section
+	qName := strings.Split(msg.Question.Name, ".")
+	qNameBytes := make([]byte, 0)
+	for _, label := range qName {
+		qNameBytes = append(qNameBytes, byte(len(label)))
+		qNameBytes = append(qNameBytes, []byte(label)...)
+	}
+	qNameBytes = append(qNameBytes, 0) // Null-terminate domain name
+	qType := make([]byte, 2)
+	binary.BigEndian.PutUint16(qType, msg.Question.Type)
+	qClass := make([]byte, 2)
+	binary.BigEndian.PutUint16(qClass, msg.Question.Class)
+
+	return append(header, append(qNameBytes, append(qType, qClass...)...)...), nil
 }
 
 const (
